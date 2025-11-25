@@ -155,7 +155,7 @@ import axios from 'axios'
 import { ElMessage } from 'element-plus'
 
 // === 基础数据 ===
-const API_URL = 'http://localhost:8080/api' // 本地调试地址
+const API_URL = '/api'
 const dialogVisible = ref(false)
 const algorithm = ref('FCFS')
 const timeSlice = ref(2)
