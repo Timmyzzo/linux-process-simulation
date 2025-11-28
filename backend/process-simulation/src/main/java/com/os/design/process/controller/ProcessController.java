@@ -16,7 +16,7 @@ public class ProcessController {
     @Autowired
     private SchedulerService schedulerService;
 
-    // 1. 获取系统全量状态 (前端每秒轮询这个接口)
+    // 1. 获取系统全量状态
     @GetMapping("/status")
     public Result<Map<String, Object>> getStatus() {
         return Result.success(schedulerService.getSystemStatus());
@@ -36,7 +36,7 @@ public class ProcessController {
         return Result.success(run ? "System started" : "System paused");
     }
 
-    // 4. 控制：时钟步进 (前端每秒调一次，驱动系统走一秒)
+    // 4. 控制：时钟步进
     @PostMapping("/control/tick")
     public Result<String> tick() {
         schedulerService.tick();
@@ -70,5 +70,12 @@ public class ProcessController {
     public Result<String> wake(@RequestParam int pid) {
         schedulerService.wakeUpProcess(pid);
         return Result.success("Process woke up");
+    }
+
+    // 9. 撤销进程 (Kill) - 新增接口
+    @PostMapping("/process/kill")
+    public Result<String> kill(@RequestParam int pid) {
+        schedulerService.killProcess(pid);
+        return Result.success("Process killed");
     }
 }

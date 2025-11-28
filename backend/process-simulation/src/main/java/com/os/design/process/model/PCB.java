@@ -1,48 +1,40 @@
 package com.os.design.process.model;
 
+import lombok.AllArgsConstructor;
 import lombok.Data;
+import lombok.NoArgsConstructor;
 
 /**
  * 进程控制块 (Process Control Block)
- * 模拟 Linux 内核中的 struct task_struct
  */
 @Data
+@NoArgsConstructor
+@AllArgsConstructor
 public class PCB {
     // === 基础信息 ===
-    private Integer pid;            // 进程标识符 (PID)
-    private String name;            // 进程名称
-    private String color;           // 前端展示颜色 (可视化加分项)
+    private Integer pid;            // 进程标识符
+    private String name;            // 进程名
+    private String color;           // 颜色
 
     // === 调度信息 ===
-    private int arrivalTime;        // 到达时间 (相对于开始模拟的时间点)
-    private int serviceTime;        // 服务时间 (需要运行的总时长)
-    private int priority;           // 优先级 (数字越大，优先级越高，模拟 nice 值)
+    // 这里的 int 全部改为 Integer，防止前端没传值时报错
+    private Integer arrivalTime;        // 到达时间
+    private Integer serviceTime;        // 服务时间
+    private Integer priority;           // 优先级
 
     // === 运行状态 ===
-    private int remainingTime;      // 剩余运行时间
-    private int usedTime;           // 已运行时间
-    private ProcessState state;     // 当前状态
+    // 给一些字段设置默认值，以防万一
+    private Integer remainingTime;      // 剩余时间
+    private Integer usedTime = 0;       // 已运行时间 (默认为0)
+    private ProcessState state = ProcessState.READY; // 默认就绪
 
-    // === 统计信息 (用于算法评估) ===
-    private int startTime;          // 开始运行时间
-    private int finishTime;         // 完成时间
-    private int turnAroundTime;     // 周转时间 = 完成时间 - 到达时间
-    private double weightedTurnAroundTime; // 带权周转时间 = 周转时间 / 服务时间
+    // === 统计信息 ===
+    private Integer startTime;
+    private Integer finishTime;
+    private Integer turnAroundTime;
+    private Double weightedTurnAroundTime; // double 也要改 Double
 
-    /**
-     * 构造函数：创建一个新进程
-     */
-    public PCB(Integer pid, String name, int arrivalTime, int serviceTime, int priority, String color) {
-        this.pid = pid;
-        this.name = name;
-        this.arrivalTime = arrivalTime;
-        this.serviceTime = serviceTime;
-        this.priority = priority;
-        this.color = color;
-
-        // 初始化状态
-        this.remainingTime = serviceTime;
-        this.usedTime = 0;
-        this.state = ProcessState.READY; // 默认为就绪
-    }
+    // 为了方便逻辑处理，我们还需要确保初始化时 remainingTime = serviceTime
+    // 但因为使用了 Lombok，我们可以在 Service 层处理，或者前端传过来
+    // 最简单的办法：在 SchedulerService.addProcess 里补全数据
 }

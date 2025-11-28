@@ -17,21 +17,23 @@
         <el-card class="control-panel">
           <el-form :inline="true">
             <el-form-item label="调度算法">
-              <el-select v-model="algorithm" placeholder="选择算法" style="width: 150px" @change="changeAlgorithm">
-                <el-option label="先来先服务 (FCFS)" value="FCFS" />
-                <el-option label="优先级调度 (PSA)" value="PSA" />
-                <el-option label="时间片轮转 (RR)" value="RR" />
+              <el-select v-model="algorithm" placeholder="选择算法" style="width: 180px" @change="changeAlgorithm">
+                <el-option label="先来先服务 (FCFS)" value="FCFS"/>
+                <el-option label="优先级调度 (PSA)" value="PSA"/>
+                <el-option label="时间片轮转 (RR)" value="RR"/>
+                <el-option label="最短剩余时间 (SRTF)" value="SRTF"/>
               </el-select>
             </el-form-item>
             <el-form-item label="时间片(s)" v-if="algorithm === 'RR'">
-              <el-input-number v-model="timeSlice" :min="1" :max="10" />
+              <el-input-number v-model="timeSlice" :min="1" :max="10"/>
             </el-form-item>
             <el-form-item>
               <el-button type="primary" @click="dialogVisible = true">添加进程</el-button>
               <el-button type="success" @click="toggleRun">{{ systemStatus.isRunning ? '暂停' : '开始' }}</el-button>
               <el-button type="warning" @click="resetSystem">清空</el-button>
               <el-button type="info" @click="replaySystem">重放</el-button>
-              <el-button type="danger" @click="blockProcess" :disabled="!systemStatus.runningProcess">手动阻塞</el-button>
+              <el-button type="danger" @click="blockProcess" :disabled="!systemStatus.runningProcess">手动阻塞
+              </el-button>
             </el-form-item>
           </el-form>
         </el-card>
@@ -42,8 +44,15 @@
           <el-col :span="6">
             <el-card header="后备队列 (Backup)">
               <div class="queue-box">
-                <div v-for="p in systemStatus.backupQueue" :key="p.pid" class="process-block" :style="{background: p.color}">
-                  {{ p.name }}<br>Arr: {{ p.arrivalTime }}
+                <div v-for="p in systemStatus.backupQueue" :key="p.pid" class="process-block"
+                     :style="{background: p.color}">
+                  <div class="block-header">
+                    <span class="pid-text">{{ p.name }}</span>
+                    <el-icon class="close-btn" @click.stop="killProcess(p.pid)">
+                      <Close/>
+                    </el-icon>
+                  </div>
+                  <div class="block-info">Arr: {{ p.arrivalTime }}</div>
                 </div>
                 <div v-if="systemStatus.backupQueue.length === 0" class="empty-tip">空</div>
               </div>
@@ -54,8 +63,19 @@
           <el-col :span="6">
             <el-card header="就绪队列 (Ready)">
               <div class="queue-box">
-                <div v-for="p in systemStatus.readyQueue" :key="p.pid" class="process-block" :style="{background: p.color}">
-                  {{ p.name }}<br>Pri: {{ p.priority }}
+                <div v-for="p in systemStatus.readyQueue" :key="p.pid" class="process-block"
+                     :style="{background: p.color}">
+                  <div class="block-header">
+                    <span class="pid-text">{{ p.name }}</span>
+                    <el-icon class="close-btn" @click.stop="killProcess(p.pid)">
+                      <Close/>
+                    </el-icon>
+                  </div>
+                  <div class="block-info">
+                    <span v-if="algorithm === 'PSA'">Pri: {{ p.priority }}</span>
+                    <span v-else-if="algorithm === 'SRTF'">Rem: {{ p.remainingTime }}</span>
+                    <span v-else>Wait</span>
+                  </div>
                 </div>
                 <div v-if="systemStatus.readyQueue.length === 0" class="empty-tip">空</div>
               </div>
@@ -66,11 +86,17 @@
           <el-col :span="6">
             <el-card header="CPU (Running)" class="cpu-card">
               <div v-if="systemStatus.runningProcess" style="width: 100%; text-align: center;">
-                <div class="process-block running" :style="{background: systemStatus.runningProcess.color, margin: '0 auto 15px auto'}">
-                  <h3>{{ systemStatus.runningProcess.name }}</h3>
+                <div class="process-block running"
+                     :style="{background: systemStatus.runningProcess.color, margin: '0 auto 15px auto'}">
+                  <div class="block-header" style="justify-content: center; position: relative;">
+                    <h3>{{ systemStatus.runningProcess.name }}</h3>
+                    <el-icon class="close-btn-cpu" @click.stop="killProcess(systemStatus.runningProcess.pid)">
+                      <Close/>
+                    </el-icon>
+                  </div>
                   <p>剩余: {{ systemStatus.runningProcess.remainingTime }}s</p>
                 </div>
-                <el-progress :percentage="calcProgress(systemStatus.runningProcess)" :stroke-width="18" text-inside />
+                <el-progress :percentage="calcProgress(systemStatus.runningProcess)" :stroke-width="18" text-inside/>
               </div>
               <div v-else class="cpu-idle">CPU 空闲</div>
             </el-card>
@@ -80,9 +106,17 @@
           <el-col :span="6">
             <el-card header="阻塞队列 (Blocked)">
               <div class="queue-box">
-                <div v-for="p in systemStatus.blockedQueue" :key="p.pid" class="process-block blocked" :style="{background: p.color}">
-                  {{ p.name }}
-                  <el-button size="small" circle @click="wakeUp(p.pid)" style="margin-top:5px; transform: scale(0.8)">唤醒</el-button>
+                <div v-for="p in systemStatus.blockedQueue" :key="p.pid" class="process-block blocked"
+                     :style="{background: p.color}">
+                  <div class="block-header">
+                    <span class="pid-text">{{ p.name }}</span>
+                    <el-icon class="close-btn" @click.stop="killProcess(p.pid)">
+                      <Close/>
+                    </el-icon>
+                  </div>
+                  <el-button size="small" circle @click="wakeUp(p.pid)" style="margin-top:5px; transform: scale(0.8)">
+                    唤醒
+                  </el-button>
                 </div>
                 <div v-if="systemStatus.blockedQueue.length === 0" class="empty-tip">空</div>
               </div>
@@ -93,17 +127,17 @@
         <!-- 第三行：结果统计表格 -->
         <el-card header="运行结果统计" style="margin-top: 20px">
           <el-table :data="allProcesses" style="width: 100%" height="250">
-            <el-table-column prop="pid" label="PID" width="80" />
-            <el-table-column prop="name" label="进程名" width="100" />
-            <el-table-column prop="arrivalTime" label="到达时间" width="100" />
-            <el-table-column prop="serviceTime" label="服务时间" width="100" />
-            <el-table-column prop="priority" label="优先级" width="80" />
+            <el-table-column prop="pid" label="PID" width="80"/>
+            <el-table-column prop="name" label="进程名" width="100"/>
+            <el-table-column prop="arrivalTime" label="到达时间" width="100"/>
+            <el-table-column prop="serviceTime" label="服务时间" width="100"/>
+            <el-table-column prop="priority" label="优先级" width="80"/>
             <el-table-column prop="finishTime" label="完成时间" width="100">
               <template #default="scope">
                 {{ scope.row.finishTime > 0 ? scope.row.finishTime : '-' }}
               </template>
             </el-table-column>
-            <el-table-column prop="turnAroundTime" label="周转时间" width="100" />
+            <el-table-column prop="turnAroundTime" label="周转时间" width="100"/>
             <el-table-column prop="weightedTurnAroundTime" label="带权周转" width="100">
               <template #default="scope">
                 {{ scope.row.weightedTurnAroundTime ? scope.row.weightedTurnAroundTime.toFixed(2) : '-' }}
@@ -124,19 +158,19 @@
     <el-dialog v-model="dialogVisible" title="添加新进程" width="30%">
       <el-form :model="newProcess" label-width="100px">
         <el-form-item label="进程名">
-          <el-input v-model="newProcess.name" />
+          <el-input v-model="newProcess.name"/>
         </el-form-item>
         <el-form-item label="到达时间">
-          <el-input-number v-model="newProcess.arrivalTime" :min="0" />
+          <el-input-number v-model="newProcess.arrivalTime" :min="0"/>
         </el-form-item>
         <el-form-item label="服务时间">
-          <el-input-number v-model="newProcess.serviceTime" :min="1" />
+          <el-input-number v-model="newProcess.serviceTime" :min="1"/>
         </el-form-item>
         <el-form-item label="优先级">
-          <el-input-number v-model="newProcess.priority" :min="1" />
+          <el-input-number v-model="newProcess.priority" :min="1"/>
         </el-form-item>
         <el-form-item label="颜色">
-          <el-color-picker v-model="newProcess.color" />
+          <el-color-picker v-model="newProcess.color"/>
         </el-form-item>
       </el-form>
       <template #footer>
@@ -150,11 +184,13 @@
 </template>
 
 <script setup>
-import { ref, onMounted, computed } from 'vue'
+import {ref, onMounted, computed} from 'vue'
 import axios from 'axios'
-import { ElMessage } from 'element-plus'
+import {ElMessage} from 'element-plus'
+import {Close} from '@element-plus/icons-vue' // 引入关闭图标
 
 // === 基础数据 ===
+// 关键修改：使用相对路径，自动适配服务器 IP
 const API_URL = '/api'
 const dialogVisible = ref(false)
 const algorithm = ref('FCFS')
@@ -214,7 +250,7 @@ const tick = async () => {
 
 const submitProcess = async () => {
   const pid = Math.floor(Math.random() * 1000)
-  const p = { ...newProcess.value, pid }
+  const p = {...newProcess.value, pid}
   await axios.post(`${API_URL}/process`, p)
   dialogVisible.value = false
   ElMessage.success('进程添加成功')
@@ -233,10 +269,8 @@ const resetSystem = async () => {
   ElMessage.success('系统已清空')
 }
 
-// 新增：重放功能
 const replaySystem = async () => {
   let all = []
-  // 收集当前所有进程（无论死活）
   all = all.concat(systemStatus.value.finishedQueue)
   all = all.concat(systemStatus.value.readyQueue)
   all = all.concat(systemStatus.value.blockedQueue)
@@ -245,12 +279,15 @@ const replaySystem = async () => {
 
   if (all.length === 0) return ElMessage.warning('没有进程可重放')
 
-  // 1. 重置后端
   await axios.post(`${API_URL}/control/reset`)
 
-  // 2. 重新提交所有进程 (保留原始参数)
   for (let p of all) {
+    // 修复：为重放的进程生成新的随机 PID
+    // 如果你想保留原 PID，也可以写 pid: p.pid
+    const newPid = Math.floor(Math.random() * 10000)
+
     const newP = {
+      pid: newPid, // <--- 关键！加上这一行
       name: p.name,
       arrivalTime: p.arrivalTime,
       serviceTime: p.serviceTime,
@@ -279,6 +316,17 @@ const wakeUp = async (pid) => {
   fetchStatus()
 }
 
+// 新增：撤销进程
+const killProcess = async (pid) => {
+  try {
+    await axios.post(`${API_URL}/process/kill?pid=${pid}`)
+    ElMessage.success(`进程 ${pid} 已被强制撤销`)
+    fetchStatus()
+  } catch (e) {
+    console.error(e)
+  }
+}
+
 // === 辅助函数 ===
 const calcProgress = (p) => {
   if (!p) return 0
@@ -286,12 +334,17 @@ const calcProgress = (p) => {
 }
 
 const getStateType = (state) => {
-  switch(state) {
-    case 'RUNNING': return 'success'
-    case 'READY': return 'primary'
-    case 'BLOCKED': return 'warning'
-    case 'FINISHED': return 'info'
-    default: return ''
+  switch (state) {
+    case 'RUNNING':
+      return 'success'
+    case 'READY':
+      return 'primary'
+    case 'BLOCKED':
+      return 'warning'
+    case 'FINISHED':
+      return 'info'
+    default:
+      return ''
   }
 }
 
@@ -301,15 +354,85 @@ onMounted(() => {
   timer.value = setInterval(() => {
     tick()
     if (!systemStatus.value.isRunning) fetchStatus()
-  }, 1000) // 1秒一次，如果觉得慢可以改成 500
+  }, 1000)
 })
 </script>
 
 <style scoped>
-.header { background: #fff; border-bottom: 1px solid #ddd; display: flex; justify-content: space-between; align-items: center; padding: 0 20px; }
-.control-panel { margin-bottom: 20px; }
-.queue-box { min-height: 100px; display: flex; flex-wrap: wrap; gap: 10px; padding: 10px; background: #f9f9f9; border-radius: 4px; }
-.process-block { width: 80px; height: 80px; color: #fff; padding: 5px; border-radius: 4px; font-size: 12px; display: flex; flex-direction: column; justify-content: center; align-items: center; text-align: center; box-shadow: 0 2px 4px rgba(0,0,0,0.1); }
+.header {
+  background: #fff;
+  border-bottom: 1px solid #ddd;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 0 20px;
+}
+
+.control-panel {
+  margin-bottom: 20px;
+}
+
+.queue-box {
+  min-height: 100px;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+  padding: 10px;
+  background: #f9f9f9;
+  border-radius: 4px;
+}
+
+/* 进程卡片样式优化 */
+.process-block {
+  width: 80px;
+  height: 80px;
+  color: #fff;
+  padding: 5px;
+  border-radius: 4px;
+  font-size: 12px;
+  display: flex;
+  flex-direction: column;
+  justify-content: space-between; /* 上下分布 */
+  align-items: center;
+  text-align: center;
+  box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
+  position: relative; /* 为了定位删除按钮 */
+}
+
+.block-header {
+  display: flex;
+  justify-content: space-between;
+  width: 100%;
+  padding: 0 2px;
+}
+
+.pid-text {
+  font-weight: bold;
+}
+
+.close-btn {
+  cursor: pointer;
+  font-size: 14px;
+}
+
+.close-btn:hover {
+  color: red;
+  background: rgba(255, 255, 255, 0.8);
+  border-radius: 50%;
+}
+
+.close-btn-cpu {
+  position: absolute;
+  right: 5px;
+  top: 5px;
+  cursor: pointer;
+  font-size: 16px;
+}
+
+.close-btn-cpu:hover {
+  color: red;
+}
+
 .cpu-card {
   text-align: center;
   min-height: 200px;
@@ -317,7 +440,24 @@ onMounted(() => {
   flex-direction: column;
   justify-content: center;
 }
-.process-block.running { width: 100%; height: 100px; font-size: 16px; }
-.cpu-idle { color: #999; font-size: 20px; padding: 40px; }
-.empty-tip { color: #ccc; width: 100%; text-align: center; line-height: 100px; }
+
+.process-block.running {
+  width: 100%;
+  height: 100px;
+  font-size: 16px;
+  justify-content: center;
+}
+
+.cpu-idle {
+  color: #999;
+  font-size: 20px;
+  padding: 40px;
+}
+
+.empty-tip {
+  color: #ccc;
+  width: 100%;
+  text-align: center;
+  line-height: 100px;
+}
 </style>

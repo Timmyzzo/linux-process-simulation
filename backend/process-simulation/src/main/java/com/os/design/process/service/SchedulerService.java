@@ -23,7 +23,7 @@ public class SchedulerService {
     // 是否正在运行
     private boolean isRunning = false;
 
-    // 当前选用的算法: "FCFS", "RR", "PSA"
+    // 当前选用的算法: "FCFS", "RR", "PSA", "SRTF"
     private String currentAlgorithm = "FCFS";
 
     // 时间片大小 (仅用于 RR 算法)
@@ -65,6 +65,11 @@ public class SchedulerService {
      * 添加新进程 (用户提交)
      */
     public void addProcess(PCB pcb) {
+        // === 补全数据 (防止空指针) ===
+        if (pcb.getUsedTime() == null) pcb.setUsedTime(0);
+        // 关键：剩余时间 = 服务时间
+        if (pcb.getRemainingTime() == null) pcb.setRemainingTime(pcb.getServiceTime());
+
         // 如果到达时间 <= 当前时间，直接进就绪队列；否则进后备队列
         if (pcb.getArrivalTime() <= currentTime) {
             pcb.setState(ProcessState.READY);
@@ -107,12 +112,21 @@ public class SchedulerService {
                 runningProcess = null;
                 currentSliceUsed = 0;
             }
-            // B. PSA 抢占逻辑: 检查是否有更高优先级的进程到达
-            else if ("PSA".equals(currentAlgorithm)) {
-                boolean hasHigher = readyQueue.stream()
-                        .anyMatch(p -> p.getPriority() > runningProcess.getPriority());
+            // B. 抢占式逻辑 (PSA 和 SRTF)
+            else if ("PSA".equals(currentAlgorithm) || "SRTF".equals(currentAlgorithm)) {
+                boolean shouldPreempt = false;
 
-                if (hasHigher) {
+                if ("PSA".equals(currentAlgorithm)) {
+                    // PSA: 检查是否有优先级更高的 (数值越大优先级越高)
+                    shouldPreempt = readyQueue.stream()
+                            .anyMatch(p -> p.getPriority() > runningProcess.getPriority());
+                } else {
+                    // SRTF: 检查是否有剩余时间更短的
+                    shouldPreempt = readyQueue.stream()
+                            .anyMatch(p -> p.getRemainingTime() < runningProcess.getRemainingTime());
+                }
+
+                if (shouldPreempt) {
                     // 被抢占！
                     runningProcess.setState(ProcessState.READY);
                     readyQueue.add(runningProcess); // 放回就绪队列
@@ -166,11 +180,36 @@ public class SchedulerService {
             case "PSA":  // 优先级调度：按优先级倒序 (数值大优先级高)
                 readyQueue.sort((p1, p2) -> p2.getPriority() - p1.getPriority());
                 break;
+            case "SRTF": // 最短剩余时间优先：按剩余时间升序
+                readyQueue.sort(Comparator.comparingInt(PCB::getRemainingTime));
+                break;
             case "RR":   // 轮转法：不做排序，直接取队头 (FIFO)
                 break;
             default:
                 break;
         }
+    }
+
+    /**
+     * 强制撤销进程 (Kill) - 新增功能
+     */
+    public synchronized void killProcess(int pid) {
+        // 1. 检查运行区
+        // 使用 equals 比较，更安全
+        if (runningProcess != null && runningProcess.getPid().equals(pid)) {
+            runningProcess = null;
+            currentSliceUsed = 0;
+            return;
+        }
+
+        // 2. 检查就绪队列 (使用 Objects.equals 或 equals)
+        readyQueue.removeIf(p -> p.getPid().equals(pid));
+
+        // 3. 检查阻塞队列
+        blockedQueue.removeIf(p -> p.getPid().equals(pid));
+
+        // 4. 检查后备队列
+        backupQueue.removeIf(p -> p.getPid().equals(pid));
     }
 
     /**
@@ -185,7 +224,7 @@ public class SchedulerService {
         if (p.getServiceTime() > 0) {
             p.setWeightedTurnAroundTime((double) p.getTurnAroundTime() / p.getServiceTime());
         } else {
-            p.setWeightedTurnAroundTime(0);
+            p.setWeightedTurnAroundTime( ( double ) 0 );
         }
         finishedQueue.add(p);
     }
@@ -223,9 +262,6 @@ public class SchedulerService {
         while (it.hasNext()) {
             PCB p = it.next();
             if (p.getPid().equals(pid)) {
-                // 唤醒后，根据算法决定放哪
-                // 这里简单处理：直接放回就绪队列，等待下一次 tick 调度
-                // 如果是抢占式 PSA，下一次 tick 会自动检查优先级
                 p.setState(ProcessState.READY);
                 readyQueue.add(p);
                 it.remove();
